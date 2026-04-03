@@ -1120,13 +1120,13 @@ def draw_hud(shields, max_shields, score, wave, enemies_left, wave_total,
     sp_wb = (specials or {}).get('warp', {})
     if sp_wb.get('active'):
         wb_pulse = int(100+155*abs(math.sin(sp_wb.get('timer',0)*6)))
-        draw_lcars_btn(surf, BTN_WARP_BOOST, f"WARP BOOST  {sp_wb['timer']:.1f}s",
+        draw_lcars_btn(surf, BTN_WARP_BOOST, f"MAX POWER  {sp_wb['timer']:.1f}s",
                        (wb_pulse, wb_pulse//2, 0), lit=True)
     elif sp_wb.get('cd', 0) > 0:
-        draw_lcars_btn(surf, BTN_WARP_BOOST, f"WARP BOOST  CD{sp_wb['cd']:.0f}s",
+        draw_lcars_btn(surf, BTN_WARP_BOOST, f"MAX POWER  CD{sp_wb['cd']:.0f}s",
                        (50, 30, 0), lit=False)
     else:
-        draw_lcars_btn(surf, BTN_WARP_BOOST, "WARP BOOST", (255, 140, 0), lit=True)
+        draw_lcars_btn(surf, BTN_WARP_BOOST, "MAX POWER", (255, 140, 0), lit=True)
 
     # ── Right panel ──────────────────────────────────────────────────────────
     rx = SCREEN_W - PANEL_W
@@ -1570,7 +1570,7 @@ def run_game():
         if not game_over and not paused:
 
             # ── Power regen ──
-            _regen = POWER_REGEN * (3.0 if warp_active else 1.0)
+            _regen = POWER_REGEN * (3.0 if warp_active else (2.0 if not shields_on else 1.0))
             power = min(max_power, power + _regen * dt)
 
             # Wave 10: weapons power stays full
@@ -2035,8 +2035,9 @@ def run_game():
         screen.fill(BLACK)
         draw_stars(dt)
 
-        # Shield ring
-        draw_shield(shields, max_shields)
+        # Shield ring — only visible when shields are on
+        if shields_on:
+            draw_shield(shields, max_shields)
 
         # Enterprise-D
         draw_enterprise(CX, CY - 8)
