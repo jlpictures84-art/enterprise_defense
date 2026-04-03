@@ -1,0 +1,9 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Enterprise Defense
+Comment=USS Enterprise NCC-1701-D Tactical Defense
+Exec=/home/joe/play_enterprise.sh
+Icon=/home/joe/enterprise_defense_icon.svg
+Terminal=false
+Categories=Game;
