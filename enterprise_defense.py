@@ -62,11 +62,12 @@ SR = 48000
 _SFX_DIR = tempfile.mkdtemp(prefix='enterprise_sfx_')
 WAV = {}          # name -> /tmp/... path
 SOUNDS_OK = False
+sfx_on = True     # weapons / effects audio toggle
 
 def _write_wav(arr, name):
     """Write float32 mono array to a WAV file; return path."""
     path = os.path.join(_SFX_DIR, f'{name}.wav')
-    s16 = (arr.clip(-1, 1) * 32767).astype('int16')
+    s16 = (arr.clip(-1, 1) * 32767 * 0.5).astype('int16')
     with wave.open(path, 'w') as wf:
         wf.setnchannels(1)
         wf.setsampwidth(2)
@@ -187,7 +188,7 @@ except Exception as _e:
 
 def play_oneshot(name, _vol=1.0):
     """Play a one-shot sound in a daemon thread via aplay."""
-    if not SOUNDS_OK or name not in WAV:
+    if not SOUNDS_OK or name not in WAV or not sfx_on:
         return
     path = WAV[name]
     threading.Thread(
@@ -203,6 +204,8 @@ def play_klaxon():
     """Play the red alert sound once (3.5s) — no looping."""
     global _klaxon_proc
     stop_klaxon()
+    if not sfx_on:
+        return
     path = WAV.get('klaxon')
     if not path:
         return
@@ -401,12 +404,13 @@ _RP = SCREEN_W - PANEL_W     # right panel x start
 
 _BB = SCREEN_H - BOT_H   # bottom of play area = 722
 
-# Left panel — 5 buttons stacked from bottom up
+# Left panel — 6 buttons stacked from bottom up
 BTN_QUIT         = pygame.Rect(_LP+10, _BB- 50, PANEL_W-20, 44)
 BTN_WARP_BOOST   = pygame.Rect(_LP+10, _BB-102, PANEL_W-20, 46)
 BTN_INTRUDER     = pygame.Rect(_LP+10, _BB-156, PANEL_W-20, 48)
 BTN_SHIELD       = pygame.Rect(_LP+10, _BB-212, PANEL_W-20, 50)
 BTN_PAUSE        = pygame.Rect(_LP+10, _BB-272, PANEL_W-20, 52)
+BTN_SFX          = pygame.Rect(_LP+10, _BB-332, PANEL_W-20, 52)
 
 # Right panel — 5 buttons stacked from bottom up
 BTN_TRACTOR      = pygame.Rect(_RP+10, _BB- 50, PANEL_W-20, 44)
@@ -841,7 +845,7 @@ class BossEnemy:
         # Fire timer
         self.fire_timer -= dt
         if self.fire_timer <= 0:
-            self.fire_timer = 3.0
+            self.fire_timer = 4.5
             return 'fire'
         return None
 
@@ -972,7 +976,7 @@ def draw_hud(shields, max_shields, score, wave, enemies_left, wave_total,
              auto_lock_active=False, auto_lock_charges=0, auto_lock_timer=0.0,
              specials=None, hull=100, max_hull=100,
              all_weapons_active=False, all_weapons_charges=0, all_weapons_timer=0.0,
-             paused=False):
+             paused=False, sfx_on=True):
     surf = screen
 
     # ── Top bar ──────────────────────────────────────────────────────────────
@@ -1097,6 +1101,12 @@ def draw_hud(shields, max_shields, score, wave, enemies_left, wave_total,
 
     # QUIT button
     draw_lcars_btn(surf, BTN_QUIT, "QUIT GAME", (180, 40, 40), lit=True)
+
+    # SFX toggle button
+    if sfx_on:
+        draw_lcars_btn(surf, BTN_SFX, "SFX: ON", LCARS_TEAL, lit=True)
+    else:
+        draw_lcars_btn(surf, BTN_SFX, "SFX: OFF", LCARS_RED, lit=False)
 
     # PAUSE button
     if paused:
@@ -1321,6 +1331,7 @@ def run_game():
     game_over_reason = 'shields'
 
     weapon      = 'phaser'   # 'phaser' or 'torpedo'
+    global sfx_on
 
     # Power system
     power         = 100.0
@@ -1398,6 +1409,13 @@ def run_game():
                 # Pause toggle — always available
                 if BTN_PAUSE.collidepoint(mx, my):
                     paused = not paused
+                    continue
+
+                # SFX toggle — always available
+                if BTN_SFX.collidepoint(mx, my):
+                    sfx_on = not sfx_on
+                    if not sfx_on:
+                        stop_klaxon()
                     continue
 
                 # Quit always available
@@ -1586,7 +1604,7 @@ def run_game():
                         shields_on = False   # auto-shutoff
                 else:
                     # Wave 10: shields drain on their own (Borg ECM disruption)
-                    shields -= 2.5 * dt
+                    shields -= 1.5 * dt
                     if shields <= 0:
                         shields = 0
                         shields_on = False
@@ -1789,7 +1807,7 @@ def run_game():
                         boss_fleet  = []
                         _vid = (wave // 10) * 2 - 1   # vid 1 @ wave10, 3 @ wave20 …
                         play_cutscene(_vid)
-                        _fleet_xs = [PANEL_W + 80, CX, SCREEN_W - PANEL_W - 80]
+                        _fleet_xs = [PANEL_W + 120, SCREEN_W - PANEL_W - 120]
                         boss_fleet = [BossEnemy(wave, start_x=_fx, start_y=CY - 200)
                                       for _fx in _fleet_xs]
                         red_alert = True
@@ -2155,7 +2173,7 @@ def run_game():
                  all_weapons_active=all_weapons_active,
                  all_weapons_charges=all_weapons_charges,
                  all_weapons_timer=all_weapons_timer,
-                 paused=paused,
+                 paused=paused, sfx_on=sfx_on,
                  specials={
                      'intruder': {'active': intruder_active, 'timer': intruder_timer, 'cd': intruder_cd},
                      'warp':     {'active': warp_active,     'timer': warp_timer,     'cd': warp_cd},
