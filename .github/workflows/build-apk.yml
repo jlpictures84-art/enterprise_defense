@@ -55,6 +55,9 @@ jobs:
           key: p4a-${{ runner.os }}-${{ hashFiles('buildozer.spec') }}
           restore-keys: p4a-${{ runner.os }}-
 
+      - name: Use Java 17 (required by Android Gradle plugin)
+        run: echo "JAVA_HOME=$JAVA_HOME_17_X64" >> $GITHUB_ENV
+
       - name: Build APK
         run: buildozer android debug
 
