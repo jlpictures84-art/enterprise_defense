@@ -25,12 +25,16 @@ jobs:
             zlib1g-dev libncurses5-dev libncursesw5-dev cmake \
             libc6-dev libbz2-dev libexpat1-dev lzma python3-dev
 
-      # ubuntu-22.04 runners ship Android SDK at $ANDROID_HOME — just need NDK + licenses
+      # Export ANDROID_HOME into Actions env context so ${{ env.ANDROID_HOME }} works below
+      - name: Export Android SDK path
+        run: |
+          echo "ANDROID_HOME=$ANDROID_HOME" >> $GITHUB_ENV
+          echo "ANDROID_NDK_ROOT=$ANDROID_HOME/ndk/25.2.9519653" >> $GITHUB_ENV
+
       - name: Accept Android SDK licenses and install NDK 25b
         run: |
-          SDKMAN="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
-          yes | "$SDKMAN" --licenses || true
-          "$SDKMAN" "ndk;25.2.9519653"
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "ndk;25.2.9519653"
 
       - name: Install buildozer + cython
         run: pip install buildozer cython==0.29.37
@@ -46,7 +50,7 @@ jobs:
         run: buildozer android debug
         env:
           ANDROIDSDK: ${{ env.ANDROID_HOME }}
-          ANDROIDNDK: ${{ env.ANDROID_HOME }}/ndk/25.2.9519653
+          ANDROIDNDK: ${{ env.ANDROID_NDK_ROOT }}
           ANDROIDAPI: "33"
           ANDROIDMINAPI: "21"
 
