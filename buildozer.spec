@@ -6,7 +6,10 @@ source.dir = .
 source.include_exts = py
 version = 1.0
 
-requirements = python3,pygame,numpy
+requirements = python3,pygame
+
+# Pin p4a to 2024.01.21 — uses Python 3.11 which has longintrepr.h (3.13 removed it)
+p4a.branch = v2024.01.21
 
 orientation = landscape
 fullscreen = 1
