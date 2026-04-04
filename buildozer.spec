@@ -15,7 +15,7 @@ android.permissions = VIBRATE
 android.api = 33
 android.minapi = 21
 android.ndk = 25b
-android.arch = arm64-v8a
+android.archs = arm64-v8a
 
 # Keep SDL audio — pygame.mixer uses it
 android.add_gradle_repositories =

@@ -12,63 +12,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-
-      - name: Install system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            git zip unzip openjdk-17-jdk \
-            libffi-dev libssl-dev autoconf libtool pkg-config \
-            zlib1g-dev libncurses5-dev libncursesw5-dev libtinfo5 cmake \
-            libgdbm-dev libc6-dev libbz2-dev libexpat1-dev \
-            libsqlite3-dev libreadline-dev lzma
-
-      - name: Install buildozer + cython
-        run: pip install buildozer cython==0.29.37
-
-      - name: Cache buildozer global dir
-        uses: actions/cache@v4
-        with:
-          path: ~/.buildozer
-          key: buildozer-${{ runner.os }}-${{ hashFiles('buildozer.spec') }}
-          restore-keys: buildozer-${{ runner.os }}-
-
-      - name: Pre-accept Android SDK licenses
-        run: |
-          mkdir -p "$HOME/.buildozer/android/platform/android-sdk/licenses"
-          # android-sdk-license (build-tools, platforms, etc.)
-          printf '8933bad161af4178b1185d1a37fbf41ea5269c55\n24333f8a63b6825ea9c5514f83c2829b004d1fee\nd56f5187479451eabf01fb78af6dfcb131a6481e\n' \
-            > "$HOME/.buildozer/android/platform/android-sdk/licenses/android-sdk-license"
-          # android-sdk-arm-dbtoolchain-license (NDK)
-          printf '84831b9409646a918e30573bab4c9c91346d8abd\n' \
-            > "$HOME/.buildozer/android/platform/android-sdk/licenses/android-sdk-arm-dbtoolchain-license"
-          # android-googletv-license
-          printf '601085b94cd77f0b54ff86406957099ebe79c4d6\n' \
-            > "$HOME/.buildozer/android/platform/android-sdk/licenses/android-googletv-license"
-          # android-sdk-preview-license
-          printf '84831b9409646a918e30573bab4c9c91346d8abd\n' \
-            > "$HOME/.buildozer/android/platform/android-sdk/licenses/android-sdk-preview-license"
-
+      # Docker-based buildozer — Android SDK/NDK + licenses all pre-configured
       - name: Build APK
-        run: yes | buildozer android debug 2>&1 || buildozer android debug
-        env:
-          ANDROIDAPI: "33"
-          ANDROIDMINAPI: "21"
-
-      - name: Rename APK with build number
-        run: |
-          mkdir -p dist
-          cp bin/*.apk dist/enterprise-defense-build${{ github.run_number }}.apk
+        uses: ArtemSBulgakov/buildozer-action@v1
+        id: buildozer
+        with:
+          command: android debug
+          buildozer_version: stable
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: enterprise-defense-apk
-          path: dist/*.apk
+          path: ${{ steps.buildozer.outputs.filename }}
           retention-days: 30
 
       - name: Create GitHub Release
@@ -79,7 +35,7 @@ jobs:
           body: |
             Auto-build from commit ${{ github.sha }}
 
-            **Install:** Download the APK, allow installs from unknown sources in Android Settings, then open the file.
-          files: dist/*.apk
+            **Install:** Download the APK → allow "Install unknown apps" in Android Settings → open the file.
+          files: ${{ steps.buildozer.outputs.filename }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
