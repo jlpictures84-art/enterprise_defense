@@ -68,6 +68,9 @@ def _init_display():
     font_med   = pygame.font.SysFont("monospace", _s(26), bold=True)
     font_small = pygame.font.SysFont("monospace", _s(18))
     font_tiny  = pygame.font.SysFont("monospace", _s(14))
+    global shield_surf, alert_surf
+    shield_surf = pygame.Surface((260, 260), pygame.SRCALPHA)
+    alert_surf  = pygame.Surface((SCREEN_W, SCREEN_H), pygame.SRCALPHA)
     _load_sounds()
 
 # ── Sound: synthesise WAV files, load into pygame.mixer ──────────────────────
@@ -899,7 +902,7 @@ class BossEnemy:
         surf.blit(lbl, (ex - lbl.get_width() // 2, bar_y - 18))
 
 # ── Shield Ring ────────────────────────────────────────────────────────────────
-shield_surf = pygame.Surface((260, 260), pygame.SRCALPHA)
+shield_surf = None  # created in _init_display()
 
 def draw_shield(shields, max_shields):
     shield_surf.fill((0, 0, 0, 0))
@@ -919,7 +922,7 @@ def draw_shield(shields, max_shields):
     screen.blit(shield_surf, (CX - 130, CY - 130))
 
 # ── Red-alert border overlay ───────────────────────────────────────────────────
-alert_surf = pygame.Surface((SCREEN_W, SCREEN_H), pygame.SRCALPHA)
+alert_surf = None  # created in _init_display()
 alert_phase = 0.0
 BORDER_T = 18   # thickness of red border
 
