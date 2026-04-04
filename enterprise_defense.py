@@ -9,30 +9,32 @@ import pygame
 import math
 import random
 import sys
-import subprocess
 import threading
 import os
 import wave
 import tempfile
-import glob
-import select
-import struct
 import time
 
 pygame.init()
-pygame.mixer.quit()   # release audio device — we use aplay instead
+pygame.mixer.init(frequency=48000)
 
-# ── Screen ────────────────────────────────────────────────────────────────────
-SCREEN_W, SCREEN_H = 1280, 800
-CX = 640
-CY = 400
-screen = pygame.display.set_mode((SCREEN_W, SCREEN_H), pygame.FULLSCREEN)
+# ── Screen — detect native resolution at runtime (Pi + Android) ───────────────
+screen = pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
+_info = pygame.display.Info()
+SCREEN_W = _info.current_w
+SCREEN_H = _info.current_h
+CX = SCREEN_W // 2
+CY = SCREEN_H // 2
 pygame.display.set_caption("USS Enterprise: Tactical Defense")
 clock = pygame.time.Clock()
 FPS = 60
 
 CENTER_X = CX
 CENTER_Y = CY
+
+# Scale factor vs reference 1280×800 design
+_SF = min(SCREEN_W / 1280, SCREEN_H / 800)
+def _s(x): return max(1, int(x * _SF))
 
 # ── LCARS Color Palette ───────────────────────────────────────────────────────
 BLACK       = (  0,   0,   0)
@@ -51,16 +53,17 @@ ALERT_RED   = (180,  20,  20)
 
 # ── Fonts ─────────────────────────────────────────────────────────────────────
 pygame.font.init()
-font_huge  = pygame.font.SysFont("dejavusansmono", 64, bold=True)
-font_large = pygame.font.SysFont("dejavusansmono", 42, bold=True)
-font_med   = pygame.font.SysFont("dejavusansmono", 26, bold=True)
-font_small = pygame.font.SysFont("dejavusansmono", 18)
-font_tiny  = pygame.font.SysFont("dejavusansmono", 14)
+font_huge  = pygame.font.SysFont("monospace", _s(64), bold=True)
+font_large = pygame.font.SysFont("monospace", _s(42), bold=True)
+font_med   = pygame.font.SysFont("monospace", _s(26), bold=True)
+font_small = pygame.font.SysFont("monospace", _s(18))
+font_tiny  = pygame.font.SysFont("monospace", _s(14))
 
-# ── Sound: synthesise WAV files, play via aplay (bypasses pygame mixer) ───────
+# ── Sound: synthesise WAV files, load into pygame.mixer ──────────────────────
 SR = 48000
 _SFX_DIR = tempfile.mkdtemp(prefix='enterprise_sfx_')
 WAV = {}          # name -> /tmp/... path
+_SOUNDS = {}      # name -> pygame.mixer.Sound object
 SOUNDS_OK = False
 sfx_on = True     # weapons / effects audio toggle
 
@@ -181,135 +184,82 @@ try:
     WAV['tractor'] = _write_wav(_tr.astype(np.float32), 'tractor')
 
     SOUNDS_OK = True
-    print(f"[audio] WAV files written to {_SFX_DIR}")
+    for _name, _path in WAV.items():
+        try:
+            _SOUNDS[_name] = pygame.mixer.Sound(_path)
+        except Exception as _e2:
+            print(f"[audio] failed to load {_name}: {_e2}")
+    print(f"[audio] loaded {len(_SOUNDS)} sounds from {_SFX_DIR}")
 
 except Exception as _e:
     print(f"[audio] sound synthesis failed: {_e}")
 
 def play_oneshot(name, _vol=1.0):
-    """Play a one-shot sound in a daemon thread via aplay."""
-    if not SOUNDS_OK or name not in WAV or not sfx_on:
+    """Play a one-shot sound via pygame.mixer."""
+    if not SOUNDS_OK or name not in _SOUNDS or not sfx_on:
         return
-    path = WAV[name]
-    threading.Thread(
-        target=lambda: subprocess.run(['aplay', '-q', path],
-                                      stdout=subprocess.DEVNULL,
-                                      stderr=subprocess.DEVNULL),
-        daemon=True
-    ).start()
+    try:
+        snd = _SOUNDS[name]
+        snd.set_volume(_vol)
+        snd.play()
+    except Exception:
+        pass
 
-_klaxon_proc = None
+_klaxon_channel = None
 
 def play_klaxon():
     """Play the red alert sound once (3.5s) — no looping."""
-    global _klaxon_proc
+    global _klaxon_channel
     stop_klaxon()
-    if not sfx_on:
+    if not SOUNDS_OK or not sfx_on or 'klaxon' not in _SOUNDS:
         return
-    path = WAV.get('klaxon')
-    if not path:
-        return
-    _klaxon_proc = subprocess.Popen(['aplay', '-q', path],
-                                    stdout=subprocess.DEVNULL,
-                                    stderr=subprocess.DEVNULL)
+    try:
+        _klaxon_channel = _SOUNDS['klaxon'].play()
+    except Exception:
+        pass
 
 def stop_klaxon():
-    global _klaxon_proc
-    if _klaxon_proc and _klaxon_proc.poll() is None:
-        _klaxon_proc.kill()
-    _klaxon_proc = None
+    global _klaxon_channel
+    if _klaxon_channel:
+        try:
+            _klaxon_channel.stop()
+        except Exception:
+            pass
+    _klaxon_channel = None
 
 def speak(text):
     pass   # voice removed
 
 # ── Chapter cutscenes ─────────────────────────────────────────────────────────
-# Videos live in ~/Downloads/ numbered 1.mp4, 2.mp4, 3.mp4 …
-# Convention:
-#   odd  numbers (1, 3, 5…) play before the chapter-final Borg fleet battle
-#   even numbers (2, 4, 6…) play at the start of the next chapter
-# e.g.  1.mp4 → before wave 10,  2.mp4 → before wave 11 (Ch.2 L.1),  etc.
-DOWNLOADS_DIR = '/home/joe/Downloads'
-
 def play_cutscene(video_num):
-    """Play Downloads/{video_num}.mp4 via ffplay fullscreen.
-    Volume +25%.  Tap anywhere on screen after 1 s to skip.
-    Silently skips if file or ffplay is missing."""
-    path = os.path.join(DOWNLOADS_DIR, f'{video_num}.mp4')
-    if not os.path.exists(path):
-        return
+    """Show an LCARS chapter title card — works on all platforms (no ffplay/evdev)."""
+    chapter = (video_num + 1) // 2
+    is_pre  = (video_num % 2 == 1)   # odd = before Borg fleet, even = new chapter
 
-    env = os.environ.copy()
-    env['SDL_VIDEODRIVER'] = 'wayland'
+    screen.fill(BLACK)
+    y = CY - _s(100)
+    for text, col in [
+        ("STAR  TREK",                    LCARS_PURP),
+        ("USS  ENTERPRISE  NCC-1701-D",   LCARS_BLUE),
+        ("",                              BLACK),
+        (f"CHAPTER  {chapter}",            LCARS_ORA),
+        ("BORG  INCURSION" if is_pre else "MISSION  CONTINUES", LCARS_GOLD),
+        ("",                              BLACK),
+        ("TAP  TO  CONTINUE",             WHITE),
+    ]:
+        if text:
+            surf = font_med.render(text, True, col)
+            screen.blit(surf, surf.get_rect(center=(CX, y)))
+        y += _s(42)
+    pygame.display.flip()
 
-    # ── skip detection: read raw evdev events so we work even while
-    #    ffplay owns the Wayland focus ──────────────────────────────
-    skip_evt = threading.Event()
-    _EV_FMT  = 'llHHi'                   # struct input_event (64-bit Linux = 24 bytes)
-    _EV_SIZE = struct.calcsize(_EV_FMT)
-    _EV_KEY  = 1
-    _SKIP_BTN_CODES = {0x110, 0x14a}     # BTN_LEFT, BTN_TOUCH
-
-    def _monitor_input():
-        fds = []
-        for dev in sorted(glob.glob('/dev/input/event*')):
-            try:
-                fds.append(open(dev, 'rb', 0))
-            except Exception:
-                pass
-        if not fds:
-            return
-        try:
-            time.sleep(1.0)              # 1-second grace period — no accidental skip
-            while not skip_evt.is_set():
-                readable, _, _ = select.select(fds, [], [], 0.2)
-                for f in readable:
-                    try:
-                        data = f.read(_EV_SIZE)
-                        if len(data) < _EV_SIZE:
-                            continue
-                        _, _, ev_type, code, value = struct.unpack(_EV_FMT, data)
-                        if ev_type == _EV_KEY and code in _SKIP_BTN_CODES and value == 1:
-                            skip_evt.set()
-                    except Exception:
-                        pass
-        finally:
-            for f in fds:
-                try:
-                    f.close()
-                except Exception:
-                    pass
-
-    # Draw "TAP TO SKIP" hint at the bottom-centre of the video
-    vf = ("drawtext=text='TAP  SCREEN  TO  SKIP':"
-          "fontsize=32:fontcolor=white:x=(w-tw)/2:y=h-60:"
-          "box=1:boxcolor=black@0.55:boxborderw=12")
-
-    try:
-        proc = subprocess.Popen(
-            ['ffplay', '-fs', '-autoexit', '-loglevel', 'quiet',
-             '-volume', '125', '-vf', vf, path],
-            env=env,
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
-        )
-        t = threading.Thread(target=_monitor_input, daemon=True)
-        t.start()
-        while proc.poll() is None:
-            if skip_evt.is_set():
-                proc.terminate()
-                try:
-                    proc.wait(timeout=2)
-                except subprocess.TimeoutExpired:
-                    proc.kill()
-                break
-            time.sleep(0.05)
-        skip_evt.set()                   # tell monitor thread to exit
-    except Exception:
-        pass
-
-    try:
-        pygame.display.set_mode((SCREEN_W, SCREEN_H), pygame.FULLSCREEN)
-    except Exception:
-        pass
+    time.sleep(1.0)
+    waiting = True
+    while waiting:
+        for ev in pygame.event.get():
+            if ev.type in (pygame.MOUSEBUTTONDOWN, pygame.FINGERDOWN, pygame.KEYDOWN):
+                waiting = False
+        clock.tick(30)
 
 # ── Starfield ─────────────────────────────────────────────────────────────────
 def make_stars(n=250):
@@ -337,45 +287,45 @@ def draw_stars(dt):
 # ── Enterprise-D (top-down view) ─────────────────────────────────────────────
 def draw_enterprise(cx, cy):
     # Nacelle pylons
-    pygame.draw.line(screen, (90, 90, 120),  (cx-18, cy+38), (cx-72, cy+52), 4)
-    pygame.draw.line(screen, (90, 90, 120),  (cx+18, cy+38), (cx+72, cy+52), 4)
+    pygame.draw.line(screen, (90, 90, 120),  (cx-_s(18), cy+_s(38)), (cx-_s(72), cy+_s(52)), _s(4))
+    pygame.draw.line(screen, (90, 90, 120),  (cx+_s(18), cy+_s(38)), (cx+_s(72), cy+_s(52)), _s(4))
 
     # Nacelles
-    for nx in (-72, 52):
-        pygame.draw.ellipse(screen, (80, 110, 180), (cx+nx, cy+25, 28, 72))
-        pygame.draw.ellipse(screen, (110, 140, 210), (cx+nx+2, cy+27, 24, 68), 2)
-        pygame.draw.circle(screen, (220, 60, 30),  (cx+nx+14, cy+30), 9)
-        pygame.draw.circle(screen, (255, 120, 60), (cx+nx+14, cy+30), 5)
-        pygame.draw.ellipse(screen, (120, 180, 255), (cx+nx+2, cy+84, 24, 8))
-        pygame.draw.ellipse(screen, (180, 220, 255), (cx+nx+5, cy+85, 18, 6))
+    for nx in (-_s(72), _s(52)):
+        pygame.draw.ellipse(screen, (80, 110, 180), (cx+nx, cy+_s(25), _s(28), _s(72)))
+        pygame.draw.ellipse(screen, (110, 140, 210), (cx+nx+_s(2), cy+_s(27), _s(24), _s(68)), _s(2))
+        pygame.draw.circle(screen, (220, 60, 30),  (cx+nx+_s(14), cy+_s(30)), _s(9))
+        pygame.draw.circle(screen, (255, 120, 60), (cx+nx+_s(14), cy+_s(30)), _s(5))
+        pygame.draw.ellipse(screen, (120, 180, 255), (cx+nx+_s(2), cy+_s(84), _s(24), _s(8)))
+        pygame.draw.ellipse(screen, (180, 220, 255), (cx+nx+_s(5), cy+_s(85), _s(18), _s(6)))
 
     # Secondary hull
-    pygame.draw.ellipse(screen, (120, 120, 145), (cx-26, cy+18, 52, 58))
-    pygame.draw.ellipse(screen, (160, 160, 185), (cx-24, cy+20, 48, 54), 2)
+    pygame.draw.ellipse(screen, (120, 120, 145), (cx-_s(26), cy+_s(18), _s(52), _s(58)))
+    pygame.draw.ellipse(screen, (160, 160, 185), (cx-_s(24), cy+_s(20), _s(48), _s(54)), _s(2))
 
     # Deflector dish
-    pygame.draw.circle(screen, ( 60, 130, 220), (cx, cy+36), 10)
-    pygame.draw.circle(screen, (140, 200, 255), (cx, cy+36),  7)
-    pygame.draw.circle(screen, (220, 240, 255), (cx, cy+36),  4)
+    pygame.draw.circle(screen, ( 60, 130, 220), (cx, cy+_s(36)), _s(10))
+    pygame.draw.circle(screen, (140, 200, 255), (cx, cy+_s(36)),  _s(7))
+    pygame.draw.circle(screen, (220, 240, 255), (cx, cy+_s(36)),  _s(4))
 
     # Connecting neck
-    pygame.draw.ellipse(screen, (130, 130, 155), (cx-10, cy+8, 20, 20))
+    pygame.draw.ellipse(screen, (130, 130, 155), (cx-_s(10), cy+_s(8), _s(20), _s(20)))
 
     # Saucer section
-    pygame.draw.ellipse(screen, (155, 155, 180), (cx-72, cy-56, 144, 110))
-    pygame.draw.ellipse(screen, (180, 180, 200), (cx-68, cy-52, 136, 102), 2)
-    pygame.draw.ellipse(screen, (140, 140, 165), (cx-52, cy-40, 104,  78), 2)
+    pygame.draw.ellipse(screen, (155, 155, 180), (cx-_s(72), cy-_s(56), _s(144), _s(110)))
+    pygame.draw.ellipse(screen, (180, 180, 200), (cx-_s(68), cy-_s(52), _s(136), _s(102)), _s(2))
+    pygame.draw.ellipse(screen, (140, 140, 165), (cx-_s(52), cy-_s(40), _s(104),  _s(78)), _s(2))
 
     # Bridge dome
-    pygame.draw.circle(screen, (200, 200, 220), (cx, cy-22), 14)
-    pygame.draw.circle(screen, (220, 220, 240), (cx, cy-22), 11)
-    pygame.draw.circle(screen, (170, 170, 200), (cx, cy-22), 11, 2)
+    pygame.draw.circle(screen, (200, 200, 220), (cx, cy-_s(22)), _s(14))
+    pygame.draw.circle(screen, (220, 220, 240), (cx, cy-_s(22)), _s(11))
+    pygame.draw.circle(screen, (170, 170, 200), (cx, cy-_s(22)), _s(11), _s(2))
 
     # Phaser arrays
-    pygame.draw.arc(screen, LCARS_ORA, (cx-60, cy-50, 120, 90),
-                    math.radians(20), math.radians(160), 2)
-    pygame.draw.arc(screen, LCARS_ORA, (cx-60, cy-50, 120, 90),
-                    math.radians(200), math.radians(340), 2)
+    pygame.draw.arc(screen, LCARS_ORA, (cx-_s(60), cy-_s(50), _s(120), _s(90)),
+                    math.radians(20), math.radians(160), _s(2))
+    pygame.draw.arc(screen, LCARS_ORA, (cx-_s(60), cy-_s(50), _s(120), _s(90)),
+                    math.radians(200), math.radians(340), _s(2))
 
 # ── Geometry helpers ──────────────────────────────────────────────────────────
 def _seg_dist(px, py, x1, y1, x2, y2):
@@ -394,9 +344,9 @@ def _lerp(a, b, t):
     return a + (b - a) * t
 
 # ── LCARS Layout Constants ────────────────────────────────────────────────────
-PANEL_W = 210    # left/right panel width
-TOP_H   = 62     # top bar height
-BOT_H   = 78     # bottom bar height
+PANEL_W = _s(210)    # left/right panel width
+TOP_H   = _s(62)     # top bar height
+BOT_H   = _s(78)     # bottom bar height
 
 # ── Button rects (used by both draw_hud and event handler) ────────────────────
 _LP = 0                      # left panel x start
@@ -405,24 +355,24 @@ _RP = SCREEN_W - PANEL_W     # right panel x start
 _BB = SCREEN_H - BOT_H   # bottom of play area = 722
 
 # Left panel — 6 buttons stacked from bottom up
-BTN_QUIT         = pygame.Rect(_LP+10, _BB- 50, PANEL_W-20, 44)
-BTN_WARP_BOOST   = pygame.Rect(_LP+10, _BB-102, PANEL_W-20, 46)
-BTN_INTRUDER     = pygame.Rect(_LP+10, _BB-156, PANEL_W-20, 48)
-BTN_SHIELD       = pygame.Rect(_LP+10, _BB-212, PANEL_W-20, 50)
-BTN_PAUSE        = pygame.Rect(_LP+10, _BB-272, PANEL_W-20, 52)
-BTN_SFX          = pygame.Rect(_LP+10, _BB-332, PANEL_W-20, 52)
+BTN_QUIT         = pygame.Rect(_LP+_s(10), _BB-_s( 50), PANEL_W-_s(20), _s(44))
+BTN_WARP_BOOST   = pygame.Rect(_LP+_s(10), _BB-_s(102), PANEL_W-_s(20), _s(46))
+BTN_INTRUDER     = pygame.Rect(_LP+_s(10), _BB-_s(156), PANEL_W-_s(20), _s(48))
+BTN_SHIELD       = pygame.Rect(_LP+_s(10), _BB-_s(212), PANEL_W-_s(20), _s(50))
+BTN_PAUSE        = pygame.Rect(_LP+_s(10), _BB-_s(272), PANEL_W-_s(20), _s(52))
+BTN_SFX          = pygame.Rect(_LP+_s(10), _BB-_s(332), PANEL_W-_s(20), _s(52))
 
 # Right panel — 5 buttons stacked from bottom up
-BTN_TRACTOR      = pygame.Rect(_RP+10, _BB- 50, PANEL_W-20, 44)
-BTN_PHOTON_BURST = pygame.Rect(_RP+10, _BB-102, PANEL_W-20, 46)
-BTN_AUTO_LOCK    = pygame.Rect(_RP+10, _BB-156, PANEL_W-20, 48)
-BTN_RED_ALERT    = pygame.Rect(_RP+10, _BB-212, PANEL_W-20, 50)
-BTN_ALL_WEAPONS  = pygame.Rect(_RP+10, _BB-272, PANEL_W-20, 52)
+BTN_TRACTOR      = pygame.Rect(_RP+_s(10), _BB-_s( 50), PANEL_W-_s(20), _s(44))
+BTN_PHOTON_BURST = pygame.Rect(_RP+_s(10), _BB-_s(102), PANEL_W-_s(20), _s(46))
+BTN_AUTO_LOCK    = pygame.Rect(_RP+_s(10), _BB-_s(156), PANEL_W-_s(20), _s(48))
+BTN_RED_ALERT    = pygame.Rect(_RP+_s(10), _BB-_s(212), PANEL_W-_s(20), _s(50))
+BTN_ALL_WEAPONS  = pygame.Rect(_RP+_s(10), _BB-_s(272), PANEL_W-_s(20), _s(52))
 
 # Bottom weapon buttons (inside the bottom bar)
-_BW = 170
-BTN_PHASER  = pygame.Rect(PANEL_W + 30,             SCREEN_H - BOT_H + 14, _BW, 50)
-BTN_TORPEDO = pygame.Rect(SCREEN_W - PANEL_W - 200, SCREEN_H - BOT_H + 14, _BW, 50)
+_BW = _s(170)
+BTN_PHASER  = pygame.Rect(PANEL_W + _s(30),             SCREEN_H - BOT_H + _s(14), _BW, _s(50))
+BTN_TORPEDO = pygame.Rect(SCREEN_W - PANEL_W - _s(200), SCREEN_H - BOT_H + _s(14), _BW, _s(50))
 
 # Torpedo power cost (referenced in draw_hud)
 TORPEDO_POWER_COST = 22.0
