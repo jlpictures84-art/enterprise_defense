@@ -50,12 +50,17 @@ jobs:
           sudo ln -sf "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
             "$ANDROID_HOME/tools/bin/sdkmanager"
 
-      - name: Cache python-for-android build
+      - name: Cache python-for-android toolchain
         uses: actions/cache@v4
         with:
           path: .buildozer
-          key: p4a-${{ runner.os }}-${{ hashFiles('buildozer.spec') }}
+          key: p4a-${{ runner.os }}-${{ hashFiles('buildozer.spec') }}-${{ hashFiles('*.py') }}
           restore-keys: p4a-${{ runner.os }}-
+
+      - name: Clear stale APK dist so buildozer always rebuilds
+        run: |
+          rm -rf .buildozer/android/platform/build-*/dist/ 2>/dev/null || true
+          rm -rf bin/ 2>/dev/null || true
 
       - name: Use Java 17 (required by Android Gradle plugin)
         run: echo "JAVA_HOME=$JAVA_HOME_17_X64" >> $GITHUB_ENV
