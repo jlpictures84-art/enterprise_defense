@@ -59,7 +59,9 @@ jobs:
 
       - name: Clear stale APK dist so buildozer always rebuilds
         run: |
+          rm -rf .buildozer/android/platform/build-*/dists/ 2>/dev/null || true
           rm -rf .buildozer/android/platform/build-*/dist/ 2>/dev/null || true
+          rm -rf .buildozer/android/app/ 2>/dev/null || true
           rm -rf bin/ 2>/dev/null || true
 
       - name: Use Java 17 (required by Android Gradle plugin)
