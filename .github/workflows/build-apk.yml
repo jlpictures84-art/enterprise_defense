@@ -26,7 +26,7 @@ jobs:
             libc6-dev libbz2-dev libexpat1-dev liblzma-dev uuid-dev python3-dev
 
       - name: Install buildozer + cython
-        run: pip install buildozer cython==0.29.37
+        run: pip install buildozer cython
 
       # Install NDK 25b on the runner's pre-configured SDK (licenses already accepted there)
       - name: Install NDK 25b
