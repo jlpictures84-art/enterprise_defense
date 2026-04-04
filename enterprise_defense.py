@@ -68,6 +68,7 @@ def _init_display():
     font_med   = pygame.font.SysFont("monospace", _s(26), bold=True)
     font_small = pygame.font.SysFont("monospace", _s(18))
     font_tiny  = pygame.font.SysFont("monospace", _s(14))
+    _load_sounds()
 
 # ── Sound: synthesise WAV files, load into pygame.mixer ──────────────────────
 SR = 48000
@@ -193,16 +194,21 @@ try:
     _tr *= np.minimum(_tr_t*6,1.0) * np.exp(-_tr_t*1.0)
     WAV['tractor'] = _write_wav(_tr.astype(np.float32), 'tractor')
 
-    SOUNDS_OK = True
+except Exception as _e:
+    print(f"[audio] sound synthesis failed: {_e}")
+
+def _load_sounds():
+    global SOUNDS_OK
+    if not WAV:
+        return
     for _name, _path in WAV.items():
         try:
             _SOUNDS[_name] = pygame.mixer.Sound(_path)
         except Exception as _e2:
             print(f"[audio] failed to load {_name}: {_e2}")
-    print(f"[audio] loaded {len(_SOUNDS)} sounds from {_SFX_DIR}")
-
-except Exception as _e:
-    print(f"[audio] sound synthesis failed: {_e}")
+    if _SOUNDS:
+        SOUNDS_OK = True
+        print(f"[audio] loaded {len(_SOUNDS)} sounds from {_SFX_DIR}")
 
 def play_oneshot(name, _vol=1.0):
     """Play a one-shot sound via pygame.mixer."""
