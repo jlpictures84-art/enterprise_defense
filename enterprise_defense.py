@@ -50,7 +50,10 @@ def _init_display():
     global screen, SCREEN_W, SCREEN_H, CX, CY, CENTER_X, CENTER_Y, clock, _SF
     global font_huge, font_large, font_med, font_small, font_tiny
     pygame.init()
-    pygame.mixer.init(frequency=48000)
+    try:
+        pygame.mixer.init(frequency=48000)
+    except Exception:
+        pass  # continue without audio if mixer fails to init (Android)
     screen = pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
     _info  = pygame.display.Info()
     SCREEN_W = _info.current_w
@@ -62,6 +65,7 @@ def _init_display():
     pygame.display.set_caption("USS Enterprise: Tactical Defense")
     clock = pygame.time.Clock()
     _SF = min(SCREEN_W / 1280, SCREEN_H / 800)
+    _init_layout()
     pygame.font.init()
     font_huge  = pygame.font.SysFont("monospace", _s(64), bold=True)
     font_large = pygame.font.SysFont("monospace", _s(42), bold=True)
@@ -362,36 +366,44 @@ def _seg_dist(px, py, x1, y1, x2, y2):
 def _lerp(a, b, t):
     return a + (b - a) * t
 
-# ── LCARS Layout Constants ────────────────────────────────────────────────────
-PANEL_W = _s(210)    # left/right panel width
-TOP_H   = _s(62)     # top bar height
-BOT_H   = _s(78)     # bottom bar height
-
-# ── Button rects (used by both draw_hud and event handler) ────────────────────
-_LP = 0                      # left panel x start
-_RP = SCREEN_W - PANEL_W     # right panel x start
-
-_BB = SCREEN_H - BOT_H   # bottom of play area = 722
-
-# Left panel — 6 buttons stacked from bottom up
+# ── LCARS Layout Constants (defaults; recalculated in _init_layout after display init) ──
+PANEL_W = _s(210);  TOP_H = _s(62);  BOT_H = _s(78)
+_LP = 0;  _RP = SCREEN_W - PANEL_W;  _BB = SCREEN_H - BOT_H;  _BW = _s(170)
 BTN_QUIT         = pygame.Rect(_LP+_s(10), _BB-_s( 50), PANEL_W-_s(20), _s(44))
 BTN_WARP_BOOST   = pygame.Rect(_LP+_s(10), _BB-_s(102), PANEL_W-_s(20), _s(46))
 BTN_INTRUDER     = pygame.Rect(_LP+_s(10), _BB-_s(156), PANEL_W-_s(20), _s(48))
 BTN_SHIELD       = pygame.Rect(_LP+_s(10), _BB-_s(212), PANEL_W-_s(20), _s(50))
 BTN_PAUSE        = pygame.Rect(_LP+_s(10), _BB-_s(272), PANEL_W-_s(20), _s(52))
 BTN_SFX          = pygame.Rect(_LP+_s(10), _BB-_s(332), PANEL_W-_s(20), _s(52))
-
-# Right panel — 5 buttons stacked from bottom up
 BTN_TRACTOR      = pygame.Rect(_RP+_s(10), _BB-_s( 50), PANEL_W-_s(20), _s(44))
 BTN_PHOTON_BURST = pygame.Rect(_RP+_s(10), _BB-_s(102), PANEL_W-_s(20), _s(46))
 BTN_AUTO_LOCK    = pygame.Rect(_RP+_s(10), _BB-_s(156), PANEL_W-_s(20), _s(48))
 BTN_RED_ALERT    = pygame.Rect(_RP+_s(10), _BB-_s(212), PANEL_W-_s(20), _s(50))
 BTN_ALL_WEAPONS  = pygame.Rect(_RP+_s(10), _BB-_s(272), PANEL_W-_s(20), _s(52))
+BTN_PHASER  = pygame.Rect(PANEL_W+_s(30),             SCREEN_H-BOT_H+_s(14), _BW, _s(50))
+BTN_TORPEDO = pygame.Rect(SCREEN_W-PANEL_W-_s(200),   SCREEN_H-BOT_H+_s(14), _BW, _s(50))
 
-# Bottom weapon buttons (inside the bottom bar)
-_BW = _s(170)
-BTN_PHASER  = pygame.Rect(PANEL_W + _s(30),             SCREEN_H - BOT_H + _s(14), _BW, _s(50))
-BTN_TORPEDO = pygame.Rect(SCREEN_W - PANEL_W - _s(200), SCREEN_H - BOT_H + _s(14), _BW, _s(50))
+def _init_layout():
+    """Recalculate layout constants and button rects using the actual _SF / screen size."""
+    global PANEL_W, TOP_H, BOT_H, _LP, _RP, _BB, _BW
+    global BTN_QUIT, BTN_WARP_BOOST, BTN_INTRUDER, BTN_SHIELD, BTN_PAUSE, BTN_SFX
+    global BTN_TRACTOR, BTN_PHOTON_BURST, BTN_AUTO_LOCK, BTN_RED_ALERT, BTN_ALL_WEAPONS
+    global BTN_PHASER, BTN_TORPEDO
+    PANEL_W = _s(210);  TOP_H = _s(62);  BOT_H = _s(78)
+    _LP = 0;  _RP = SCREEN_W - PANEL_W;  _BB = SCREEN_H - BOT_H;  _BW = _s(170)
+    BTN_QUIT         = pygame.Rect(_LP+_s(10), _BB-_s( 50), PANEL_W-_s(20), _s(44))
+    BTN_WARP_BOOST   = pygame.Rect(_LP+_s(10), _BB-_s(102), PANEL_W-_s(20), _s(46))
+    BTN_INTRUDER     = pygame.Rect(_LP+_s(10), _BB-_s(156), PANEL_W-_s(20), _s(48))
+    BTN_SHIELD       = pygame.Rect(_LP+_s(10), _BB-_s(212), PANEL_W-_s(20), _s(50))
+    BTN_PAUSE        = pygame.Rect(_LP+_s(10), _BB-_s(272), PANEL_W-_s(20), _s(52))
+    BTN_SFX          = pygame.Rect(_LP+_s(10), _BB-_s(332), PANEL_W-_s(20), _s(52))
+    BTN_TRACTOR      = pygame.Rect(_RP+_s(10), _BB-_s( 50), PANEL_W-_s(20), _s(44))
+    BTN_PHOTON_BURST = pygame.Rect(_RP+_s(10), _BB-_s(102), PANEL_W-_s(20), _s(46))
+    BTN_AUTO_LOCK    = pygame.Rect(_RP+_s(10), _BB-_s(156), PANEL_W-_s(20), _s(48))
+    BTN_RED_ALERT    = pygame.Rect(_RP+_s(10), _BB-_s(212), PANEL_W-_s(20), _s(50))
+    BTN_ALL_WEAPONS  = pygame.Rect(_RP+_s(10), _BB-_s(272), PANEL_W-_s(20), _s(52))
+    BTN_PHASER  = pygame.Rect(PANEL_W+_s(30),             SCREEN_H-BOT_H+_s(14), _BW, _s(50))
+    BTN_TORPEDO = pygame.Rect(SCREEN_W-PANEL_W-_s(200),   SCREEN_H-BOT_H+_s(14), _BW, _s(50))
 
 # Torpedo power cost (referenced in draw_hud)
 TORPEDO_POWER_COST = 22.0
