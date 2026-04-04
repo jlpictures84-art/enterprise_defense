@@ -41,6 +41,13 @@ jobs:
           # Insert after [app] line so keys land in the right section
           sed -i "/^\[app\]/a android.sdk_path = $ANDROID_HOME\nandroid.ndk_path = $NDK_PATH" buildozer.spec
 
+      # Buildozer 1.5 expects sdkmanager at legacy tools/bin/ path — create shim
+      - name: Create sdkmanager shim for buildozer 1.5 compatibility
+        run: |
+          sudo mkdir -p "$ANDROID_HOME/tools/bin"
+          sudo ln -sf "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
+            "$ANDROID_HOME/tools/bin/sdkmanager"
+
       - name: Cache python-for-android build
         uses: actions/cache@v4
         with:
