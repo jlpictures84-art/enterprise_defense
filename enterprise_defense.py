@@ -2234,9 +2234,35 @@ def run_game():
 
 # ── Entry point ────────────────────────────────────────────────────────────────
 def _android_main():
-    _init_display()
-    while True:
-        run_game()
+    try:
+        _init_display()
+        while True:
+            run_game()
+    except Exception:
+        import traceback
+        _tb = traceback.format_exc()
+        print('[ED CRASH]\n' + _tb)   # visible in adb logcat
+        try:
+            # Show the crash on screen so a screenshot can be taken
+            if screen is None:
+                pygame.init()
+                pygame.display.set_mode((0, 0))
+            _fb = pygame.font.Font(None, 20)
+            screen.fill((20, 0, 0))
+            _y = 10
+            for _line in ('CRASH — screenshot this!\n\n' + _tb).split('\n')[-26:]:
+                screen.blit(_fb.render(_line[:85], True, (255, 130, 130)), (5, _y))
+                _y += 22
+            pygame.display.flip()
+            _t0 = time.time()
+            while time.time() - _t0 < 30:
+                for _ev in pygame.event.get():
+                    if _ev.type in (pygame.QUIT, pygame.KEYDOWN,
+                                    pygame.MOUSEBUTTONDOWN, pygame.FINGERDOWN):
+                        return
+                time.sleep(0.1)
+        except Exception:
+            pass
 
 if __name__ == "__main__":
     _android_main()
