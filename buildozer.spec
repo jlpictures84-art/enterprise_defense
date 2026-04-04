@@ -12,11 +12,11 @@ orientation = landscape
 fullscreen = 1
 
 android.permissions = VIBRATE
-android.api = 33
+android.api = 34
 android.minapi = 21
 android.ndk = 25b
 android.archs = arm64-v8a
-android.build_tools_version = 33.0.2
+android.build_tools_version = 34.0.0
 
 # Keep SDL audio — pygame.mixer uses it
 android.add_gradle_repositories =
