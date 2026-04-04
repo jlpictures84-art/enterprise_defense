@@ -15,25 +15,17 @@ import wave
 import tempfile
 import time
 
-pygame.init()
-pygame.mixer.init(frequency=48000)
-
-# ── Screen — detect native resolution at runtime (Pi + Android) ───────────────
-screen = pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
-_info = pygame.display.Info()
-SCREEN_W = _info.current_w
-SCREEN_H = _info.current_h
-CX = SCREEN_W // 2
-CY = SCREEN_H // 2
-pygame.display.set_caption("USS Enterprise: Tactical Defense")
-clock = pygame.time.Clock()
-FPS = 60
-
-CENTER_X = CX
-CENTER_Y = CY
-
-# Scale factor vs reference 1280×800 design
-_SF = min(SCREEN_W / 1280, SCREEN_H / 800)
+# ── Display globals (initialised by _init_display, called from _android_main) ─
+screen   = None
+SCREEN_W = 1280
+SCREEN_H = 800
+CX       = 640
+CY       = 400
+CENTER_X = 640
+CENTER_Y = 400
+clock    = None
+FPS      = 60
+_SF      = 1.0
 def _s(x): return max(1, int(x * _SF))
 
 # ── LCARS Color Palette ───────────────────────────────────────────────────────
@@ -51,13 +43,31 @@ KLINGON_PUR = (130,  60, 180)
 PHASER_COL  = (255, 140,  20)
 ALERT_RED   = (180,  20,  20)
 
-# ── Fonts ─────────────────────────────────────────────────────────────────────
-pygame.font.init()
-font_huge  = pygame.font.SysFont("monospace", _s(64), bold=True)
-font_large = pygame.font.SysFont("monospace", _s(42), bold=True)
-font_med   = pygame.font.SysFont("monospace", _s(26), bold=True)
-font_small = pygame.font.SysFont("monospace", _s(18))
-font_tiny  = pygame.font.SysFont("monospace", _s(14))
+# ── Fonts (initialised by _init_display) ──────────────────────────────────────
+font_huge = font_large = font_med = font_small = font_tiny = None
+
+def _init_display():
+    global screen, SCREEN_W, SCREEN_H, CX, CY, CENTER_X, CENTER_Y, clock, _SF
+    global font_huge, font_large, font_med, font_small, font_tiny
+    pygame.init()
+    pygame.mixer.init(frequency=48000)
+    screen = pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
+    _info  = pygame.display.Info()
+    SCREEN_W = _info.current_w
+    SCREEN_H = _info.current_h
+    CX = SCREEN_W // 2
+    CY = SCREEN_H // 2
+    CENTER_X = CX
+    CENTER_Y = CY
+    pygame.display.set_caption("USS Enterprise: Tactical Defense")
+    clock = pygame.time.Clock()
+    _SF = min(SCREEN_W / 1280, SCREEN_H / 800)
+    pygame.font.init()
+    font_huge  = pygame.font.SysFont("monospace", _s(64), bold=True)
+    font_large = pygame.font.SysFont("monospace", _s(42), bold=True)
+    font_med   = pygame.font.SysFont("monospace", _s(26), bold=True)
+    font_small = pygame.font.SysFont("monospace", _s(18))
+    font_tiny  = pygame.font.SysFont("monospace", _s(14))
 
 # ── Sound: synthesise WAV files, load into pygame.mixer ──────────────────────
 SR = 48000
@@ -2202,6 +2212,10 @@ def run_game():
         pygame.display.flip()
 
 # ── Entry point ────────────────────────────────────────────────────────────────
-if __name__ == "__main__":
+def _android_main():
+    _init_display()
     while True:
         run_game()
+
+if __name__ == "__main__":
+    _android_main()
