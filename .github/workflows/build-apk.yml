@@ -12,19 +12,54 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # Docker-based buildozer — Android SDK/NDK + licenses all pre-configured
-      - name: Build APK
-        uses: ArtemSBulgakov/buildozer-action@v1
-        id: buildozer
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
         with:
-          command: android debug
-          buildozer_version: stable
+          python-version: "3.11"
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            git zip unzip libffi-dev libssl-dev autoconf libtool pkg-config \
+            zlib1g-dev libncurses5-dev libncursesw5-dev cmake \
+            libc6-dev libbz2-dev libexpat1-dev lzma python3-dev
+
+      # ubuntu-22.04 runners ship Android SDK at $ANDROID_HOME — just need NDK + licenses
+      - name: Accept Android SDK licenses and install NDK 25b
+        run: |
+          SDKMAN="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          yes | "$SDKMAN" --licenses || true
+          "$SDKMAN" "ndk;25.2.9519653"
+
+      - name: Install buildozer + cython
+        run: pip install buildozer cython==0.29.37
+
+      - name: Cache python-for-android build
+        uses: actions/cache@v4
+        with:
+          path: .buildozer
+          key: p4a-${{ runner.os }}-${{ hashFiles('buildozer.spec') }}
+          restore-keys: p4a-${{ runner.os }}-
+
+      - name: Build APK
+        run: buildozer android debug
+        env:
+          ANDROIDSDK: ${{ env.ANDROID_HOME }}
+          ANDROIDNDK: ${{ env.ANDROID_HOME }}/ndk/25.2.9519653
+          ANDROIDAPI: "33"
+          ANDROIDMINAPI: "21"
+
+      - name: Collect APK
+        run: |
+          mkdir -p dist
+          cp bin/*.apk dist/enterprise-defense-build${{ github.run_number }}.apk
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: enterprise-defense-apk
-          path: ${{ steps.buildozer.outputs.filename }}
+          path: dist/*.apk
           retention-days: 30
 
       - name: Create GitHub Release
@@ -36,6 +71,6 @@ jobs:
             Auto-build from commit ${{ github.sha }}
 
             **Install:** Download the APK → allow "Install unknown apps" in Android Settings → open the file.
-          files: ${{ steps.buildozer.outputs.filename }}
+          files: dist/*.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
