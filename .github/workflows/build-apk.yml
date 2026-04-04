@@ -34,12 +34,12 @@ jobs:
           yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses || true
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "ndk;25.2.9519653"
 
-      # Patch buildozer.spec to use the runner's SDK — avoids buildozer downloading its own copy
+      # Patch buildozer.spec to use the runner's SDK — must be inside [app] section
       - name: Point buildozer at runner's Android SDK
         run: |
           NDK_PATH="$ANDROID_HOME/ndk/25.2.9519653"
-          echo "android.sdk_path = $ANDROID_HOME" >> buildozer.spec
-          echo "android.ndk_path = $NDK_PATH"      >> buildozer.spec
+          # Insert after [app] line so keys land in the right section
+          sed -i "/^\[app\]/a android.sdk_path = $ANDROID_HOME\nandroid.ndk_path = $NDK_PATH" buildozer.spec
 
       - name: Cache python-for-android build
         uses: actions/cache@v4
